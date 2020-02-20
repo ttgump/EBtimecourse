@@ -1,7 +1,7 @@
 rm(list=ls())
-setwd("~/Documents/Research/Microarray_time_course/manuscript/EBtimecourse_tf")
+setwd("")
 library(tensorflow)
-use_python("/usr/local/bin/python3")
+use_python("")
 source("EBtimecourse.R")
 
 P=0.2
