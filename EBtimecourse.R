@@ -1,151 +1,76 @@
-require(optimx)
-require(foreach)
-
-### auxiliary functions for normal normal model
-NN_logL_ij <- function(P, sigma, nu, tau, i, cp, changePointTable, combNumber, Ti, left_seq_index_table, left_mean_row, right_mean_row, left_square_rowsum) {
-  if(cp==0) {
-    mean_xi = left_mean_row[i, combNumber+1]
-    log_pr = log(1-P) + log(sigma) - Ti*(0.5*log(2*pi)+log(sigma)) - 0.5*log(Ti*(tau^2)+sigma^2) +
-      (-left_square_rowsum[i, combNumber+1]/2/(sigma^2) - nu^2/2/(tau^2)) +
-      (tau^2*Ti^2*mean_xi^2/(sigma^2) + sigma^2*nu^2/(tau^2)+2*Ti*mean_xi*nu)/(2*(Ti*tau^2+sigma^2));
-  }else {
-    n1 = length(left_seq_index_table[[cp]])
-    n2 = Ti - length(left_seq_index_table[[cp]])
-    
-    mean_xi1 = left_mean_row[i, cp]
-    mean_xi2 = right_mean_row[i, cp]
-    
-    log_pr = log(P) - log(combNumber) +
-      2*log(sigma) - Ti*(0.5*log(2*pi)+log(sigma)) -0.5*log(n1*(tau^2)+sigma^2) - 0.5*log(n2*(tau^2)+sigma^2) +
-      (-left_square_rowsum[i, combNumber+1]/2/(sigma^2) - nu^2/(tau^2)) +
-      (tau^2*n1^2*mean_xi1^2/(sigma^2)+sigma^2*nu^2/(tau^2)+2*n1*mean_xi1*nu)/(2*(n1*tau^2+sigma^2)) +
-      (tau^2*n2^2*mean_xi2^2/(sigma^2)+sigma^2*nu^2/(tau^2)+2*n2*mean_xi2*nu)/(2*(n2*tau^2+sigma^2));
-  }
-  return(log_pr);
-}
-
-NN_logL_i <- function(P, sigma, m, tau, changePointTable, combNumber, N, Ti, left_seq_index_table, left_mean_row, right_mean_row, left_square_rowsum) {
-  r = 0;
-  
-  for(i in 1:N) {
-    prob_i_log_v = c();
-    for(j in 0:combNumber) {
-      prob_i_log_v = c(prob_i_log_v, NN_logL_ij(P, sigma, nu, tau, i, j, changePointTable, combNumber, Ti, left_seq_index_table, left_mean_row, right_mean_row, left_square_rowsum));
-    }
-    prob_i_log = max(prob_i_log_v) + log1p(sum(exp(prob_i_log_v[-which.max(prob_i_log_v)] - max(prob_i_log_v))));
-    r = r + prob_i_log;
-  }
-  return(r);
-}
-
-# object function for normal normal model
-NN.obj = function(parameter, changePointTable, combNumber, N, Ti, left_seq_index_table, left_mean_row, right_mean_row, left_square_rowsum) {
-  #P, sigma, mu, tau
-  r = NN_logL_i(parameter[1], parameter[2], parameter[3], parameter[4],
-                changePointTable, combNumber, N, Ti, left_seq_index_table, left_mean_row, right_mean_row, left_square_rowsum)
-  r = -r
-  return(r)
-}
+library(tensorflow)
+library(foreach)
 
 ### auxiliary functions for normal normal gamm model
-NNG_logL_ij <- function(P, mu, kappa, alpha, beta, i, cp, changePointTable, combNumber, Ti, left_seq_index_table, left_mean_row, right_mean_row, left_squareDeviation, right_squareDeviation) {
-  if(cp==0) {
-    mean_xi = left_mean_row[i, combNumber+1]
-    square_deviation_xi = left_squareDeviation[i, combNumber+1]
-    
-    kappa_n = kappa + Ti
-    alpha_n = alpha + Ti/2
-    beta_n = beta + 0.5*square_deviation_xi + (kappa*Ti*(mean_xi-mu)^2)/2/(kappa+Ti)
-    
-    log_pr = log(1-P) + lgamma(alpha_n) - lgamma(alpha) + alpha*log(beta) - alpha_n*log(beta_n) +
-      0.5*(log(kappa) - log(kappa_n)) - Ti/2*log(2*pi)
-  }else {
-    mean_xi_1 = left_mean_row[i, cp]
-    square_deviation_xi_1 = left_squareDeviation[i, cp]
-    mean_xi_2 = right_mean_row[i, cp]
-    square_deviation_xi_2 = right_squareDeviation[i, cp]
-    n1 = length(left_seq_index_table[[cp]])
-    n2 = Ti - length(left_seq_index_table[[cp]])
-    
-    kappa_n_1 = kappa + n1
-    alpha_n_1 = alpha + n1/2
-    beta_n_1 = beta + 0.5*square_deviation_xi_1 + (kappa*n1*(mean_xi_1-mu)^2)/2/(kappa+n1)
-    kappa_n_2 = kappa + n2
-    alpha_n_2 = alpha + n2/2
-    beta_n_2 = beta + 0.5*square_deviation_xi_2 + (kappa*n2*(mean_xi_2-mu)^2)/2/(kappa+n2)
-    
-    log_pr = log(P) - log(combNumber) +
-      lgamma(alpha_n_1) - alpha_n_1*log(beta_n_1) - 0.5*log(kappa_n_1) +
-      lgamma(alpha_n_2) - alpha_n_2*log(beta_n_2) - 0.5*log(kappa_n_2) - 
-      Ti/2*log(2*pi) - 2*lgamma(alpha) + 2*alpha*log(beta) + log(kappa)
-  }
+NNG_logL_cp <- function(prior_P, mu0, kappa0, alpha0, beta0, changePointTable, combNumber, Ti, left_seq_n, 
+                         left_mean_row, right_mean_row, left_squareDeviation, right_squareDeviation, tf) {
+  n1 = left_seq_n
+  n2 = tf$constant(Ti, dtype=tf$float64) - left_seq_n
+  
+  kappa_n_1 = kappa0 + n1
+  alpha_n_1 = alpha0 + n1/tf$constant(2, dtype=tf$float64)
+  beta_n_1 = beta0 + left_squareDeviation*tf$constant(0.5, dtype=tf$float64) + 
+    (n1/tf$constant(2, dtype=tf$float64)*kappa0*(left_mean_row-mu0)**2)/(kappa0+n1)
+  kappa_n_2 = kappa0 + n2
+  alpha_n_2 = alpha0 + n2/tf$constant(2, dtype=tf$float64)
+  beta_n_2 = beta0 + right_squareDeviation*tf$constant(0.5, dtype=tf$float64) + 
+    (n2/tf$constant(2, dtype=tf$float64)*kappa0*(right_mean_row-mu0)**2)/(kappa0+n2)
+  
+  log_pr = tf$log(prior_P) +
+    tf$lgamma(alpha_n_1) - alpha_n_1*tf$log(beta_n_1) - tf$constant(0.5, dtype=tf$float64)*tf$log(kappa_n_1) +
+    tf$lgamma(alpha_n_2) - alpha_n_2*tf$log(beta_n_2) - tf$constant(0.5, dtype=tf$float64)*tf$log(kappa_n_2) - 
+    Ti/2*log(2*pi) - tf$constant(2, dtype=tf$float64)*tf$lgamma(alpha0) + 
+    tf$constant(2, dtype=tf$float64)*alpha0*tf$log(beta0) + tf$log(kappa0)
   return(log_pr);
-}
-
-NNG_logL_i <- function(P, mu, kappa, alpha, beta, changePointTable, combNumber, N, Ti, left_seq_index_table, left_mean_row, right_mean_row, left_squareDeviation, right_squareDeviation) {
-  r = 0;  
-  for(i in 1:N) {
-    prob_i_log_v = c();
-    for(cp in 0:combNumber) {
-      prob_i_log_v = c(prob_i_log_v, NNG_logL_ij(P, mu, kappa, alpha, beta, i, cp, changePointTable, combNumber, Ti, left_seq_index_table, left_mean_row, right_mean_row, left_squareDeviation, right_squareDeviation));
-    }
-    prob_i_log = max(prob_i_log_v) + log1p(sum(exp(prob_i_log_v[-which.max(prob_i_log_v)] - max(prob_i_log_v))));
-    r = r + prob_i_log;
-  }
-  return(r);
 }
 
 # object function for normal normal gamma model
-NNG.obj = function(parameter, changePointTable, combNumber, N, Ti, left_seq_index_table, left_mean_row, right_mean_row, left_squareDeviation, right_squareDeviation) {
-  #prob, mu0, kappa0, alpha0, beta0
-  r = NNG_logL_i(parameter[1], parameter[2], parameter[3], parameter[4], parameter[5],
-                 changePointTable, combNumber, N, Ti, left_seq_index_table, left_mean_row, right_mean_row, left_squareDeviation, right_squareDeviation)
-  r = -r
-  return(r)
+NNG_obj <- function(prior_P, mu0, kappa0, alpha0, beta0, changePointTable, combNumber, Ti, left_seq_n, 
+                    left_mean_row, right_mean_row, left_squareDeviation, right_squareDeviation, tf) {
+  loss_cp <- NNG_logL_cp(prior_P, mu0, kappa0, alpha0, beta0, changePointTable, combNumber, Ti, 
+                             left_seq_n, left_mean_row, right_mean_row, left_squareDeviation, right_squareDeviation, tf)
+  loss <- tf$reduce_logsumexp(loss_cp, 1L)
+  loss <- - tf$reduce_sum(loss)
+  return(loss);
 }
 
-my_mean = function(x) apply(x, 1, mean)
-my_sumsquare = function(x) apply(x, 1, function(x) sum(x^2))
-my_squareDeviation = function(x) apply(x, 1, function(x) sum((x-mean(x))^2))
 
-# Empirical Bayes model to identify differentially expressed genes in transcriptome timecourse data
-# Tian Tian
-# Created 23 Jun 2017
-# Parameters:
-##  exp.dat - timecourse gene expression data matrix, with rows are genes and columns are time points
-##  timepoint - number of timepoints
-##  replicate - number of replicated (columns of data matrix = timepoint*replicate)
-##  model - one of "NN" or "NNG" for normal normal modle or normal normal gamma model
-##  FDR - FDR level for detecting change points
-#  output:
-##  cp.index - gene indices that detected to have change points
-##  cp.position - change point positions
-##  estimated.parameter - hyperparameter estimation
-EBtimecourse = function(exp.dat=NA, timepoint=NA, replicate=NA, model="NN", FDR=0.1) {
-  stopifnot(model %in% c("NN", "NNG"))
+my_mean <- function(x) apply(x, 1, mean)
+my_sumsquare <- function(x) apply(x, 1, function(x) sum(x^2))
+my_squareDeviation <- function(x) apply(x, 1, function(x) sum((x-mean(x))^2))
+
+
+EBtimecourse = function(exp.dat=NA, timepoint=NA, replicate=NA, FDR=0.1, 
+                        learning_rate=0.001, max_iter=1e5, rel_tol=1e-10, threads=0L, verbose=F) {
   stopifnot(class(exp.dat) == "matrix")
   stopifnot(class(timepoint) == "numeric" & class(replicate) == "numeric" & class(FDR) == "numeric")
   stopifnot(ncol(exp.dat) == timepoint*replicate)
   
+  tf <- tf$compat$v1
+  tf$disable_v2_behavior()
+  
+  
+  tf$reset_default_graph()
+  
   # calculate global values
-  N = nrow(exp.dat)
-  changePointTable = data.frame(matrix(NA, nrow=(timepoint-1)+(timepoint-1)*(timepoint-2)/2, ncol=3), stringsAsFactors=F)
-  colnames(changePointTable) = c("n1", "n2", "n3")
-  changePointTable[1:(timepoint-1),"n1"] = 1:(timepoint-1)
-  changePointTable[1:(timepoint-1),"n2"] = (timepoint-1):1
-  changePointTable[1:(timepoint-1),"n3"] = 0
-  combT = as.data.frame(t(combn(timepoint-1, 2)))
-  combT$V2 = combT$V2 - combT$V1
-  changePointTable[timepoint:nrow(changePointTable),c("n1","n2")] = combT
-  changePointTable[timepoint:nrow(changePointTable),"n3"] = timepoint-rowSums(changePointTable[timepoint:nrow(changePointTable),c("n1", "n2")])
-  combNumber = nrow(changePointTable)
-  Ti = timepoint*replicate
+  N <- nrow(exp.dat)
+  changePointTable <- data.frame(matrix(NA, nrow=(timepoint-1)+(timepoint-1)*(timepoint-2)/2, ncol=3), stringsAsFactors=F)
+  colnames(changePointTable) <- c("n1", "n2", "n3")
+  changePointTable[1:(timepoint-1),"n1"] <- 1:(timepoint-1)
+  changePointTable[1:(timepoint-1),"n2"] <- (timepoint-1):1
+  changePointTable[1:(timepoint-1),"n3"] <- 0
+  combT <- as.data.frame(t(combn(timepoint-1, 2)))
+  combT$V2 <- combT$V2 - combT$V1
+  changePointTable[timepoint:nrow(changePointTable),c("n1","n2")] <- combT
+  changePointTable[timepoint:nrow(changePointTable),"n3"] <- timepoint-rowSums(changePointTable[timepoint:nrow(changePointTable),c("n1", "n2")])
+  combNumber <- nrow(changePointTable)
+  Ti <- timepoint*replicate
   left_seq_index_table = foreach(cp = 1:(combNumber+1)) %do% {
     if(cp==combNumber+1) 
       return(1:Ti)
     else {
-      rho1 = changePointTable[cp,"n1"]*replicate
-      rho2 = (changePointTable[cp,"n1"]+changePointTable[cp,"n2"])*replicate
+      rho1 <- changePointTable[cp,"n1"]*replicate
+      rho2 <- (changePointTable[cp,"n1"]+changePointTable[cp,"n2"])*replicate
       
       if(rho2<Ti)
         return(c(1:rho1, (rho2+1):Ti))
@@ -153,71 +78,123 @@ EBtimecourse = function(exp.dat=NA, timepoint=NA, replicate=NA, model="NN", FDR=
         return(c(1:rho1))
     }
   }
+  left_seq_n <- sapply(left_seq_index_table, length)
+  left_seq_n_ <- tf$constant(left_seq_n, dtype=tf$float64)
+  left_seq_n_ <- tf$expand_dims(left_seq_n_, 0L)
   
-  left_submatrix = lapply(left_seq_index_table, function(i) exp.dat[, i, drop=F])
-  right_submatrix = lapply(left_seq_index_table, function(i) exp.dat[, -i, drop=F])
+  left_submatrix <- lapply(left_seq_index_table, function(i) exp.dat[, i, drop=F])
+  right_submatrix <- lapply(left_seq_index_table, function(i) exp.dat[, -i, drop=F])
   
-  left_mean_row = sapply(left_submatrix, my_mean)
-  right_mean_row = sapply(right_submatrix, my_mean)
-  
-  left_square_rowsum = sapply(left_submatrix, my_sumsquare)
-  right_square_rowsum = sapply(right_submatrix, my_sumsquare)
-  
-  left_squareDeviation = sapply(left_submatrix, my_squareDeviation)
-  right_squareDeviation = sapply(right_submatrix, my_squareDeviation)
-  
-  print("Optimizing hyperparameters...")
-  if(model == "NN") {
-    fit = optimx(par=c(0.01, 0.01, 0.01, 0.01), method='L-BFGS-B',
-                  lower=c(1e-9,1e-9,-100,1e-9), 
-                  upper=c(0.999999999,100,100,100),
-                  fn=NN.obj, changePointTable=changePointTable, combNumber=combNumber, 
-                  N=N, Ti=Ti, left_seq_index_table=left_seq_index_table, 
-                  left_mean_row=left_mean_row, right_mean_row=right_mean_row, 
-                  left_square_rowsum=left_square_rowsum)
+  left_mean_row <- sapply(left_submatrix, my_mean)
+  right_mean_row <- sapply(right_submatrix, my_mean)
+  right_mean_row[is.nan(right_mean_row)] <- 0
     
-    print(paste("Convergence:", fit$convcode))
-    P_hat = fit$p1; sigma_hat = fit$p2; nu_hat = fit$p3; tau_hat = fit$p4;
+  left_squareDeviation <- sapply(left_submatrix, my_squareDeviation)
+  right_squareDeviation <- sapply(right_submatrix, my_squareDeviation)
+  
+  # Data placeholders
+  exp.dat_inp <- tf$placeholder(tf$float64, shape = shape(NULL, Ti), name = "exp_dat_inp")
+  
+  prior_P0 <- tf$Variable(tf$random_uniform(shape = shape(1), minval=1e-9, maxval=1-1e-9, dtype = tf$float64), 
+                          dtype = tf$float64, name = "prior_P0", 
+                          constraint = function(x) {
+                            tf$clip_by_value(x, tf$constant(1e-9, dtype = tf$float64), 
+                                             tf$constant(1-1e-9, dtype = tf$float64))
+                          })
+  mu0 <- tf$Variable(tf$random_normal(shape = shape(1), dtype = tf$float64), 
+                     dtype = tf$float64, name = "mu0",
+                     constraint = function(x) {
+                       tf$clip_by_value(x, tf$constant(-1e5, dtype = tf$float64), 
+                                        tf$constant(1e5, dtype = tf$float64))
+                     })
+  kappa0 <- tf$Variable(tf$random_uniform(shape = shape(1), minval=0.1, maxval=10, dtype = tf$float64), 
+                        dtype = tf$float64, name = "kappa0",
+                        constraint = function(x) {
+                          tf$clip_by_value(x, tf$constant(1e-9, dtype = tf$float64), 
+                                           tf$constant(1e5, dtype = tf$float64))
+                        })
+  alpha0 <- tf$Variable(tf$random_uniform(shape = shape(1), minval=0.1, maxval=10, dtype = tf$float64),
+                        dtype = tf$float64, name = "alpha0",
+                        constraint = function(x) {
+                          tf$clip_by_value(x, tf$constant(1e-9, dtype = tf$float64), 
+                                           tf$constant(1e5, dtype = tf$float64))
+                        })
+  beta0 <- tf$Variable(tf$random_uniform(shape = shape(1), minval=0.1, maxval=10, dtype = tf$float64),
+                       dtype = tf$float64, name = "beta0",
+                       constraint = function(x) {
+                         tf$clip_by_value(x, tf$constant(1e-9, dtype = tf$float64), 
+                                          tf$constant(1e5, dtype = tf$float64))
+                       })
+  t1 <- tf$constant(c(rep(1, combNumber), 0), dtype = tf$float64)
+  t2 <- tf$constant(c(rep(1, combNumber), -combNumber), dtype = tf$float64)
+  prior_P <- (t1 - prior_P0)/tf$constant(combNumber, dtype = tf$float64)
+  prior_P <- prior_P * t2 
+  
+  left_mean_row_inp <- tf$placeholder(tf$float64, shape = shape(NULL, ncol(left_mean_row)), name = "left_mean_row_inp")
+  right_mean_row_inp <- tf$placeholder(tf$float64, shape = shape(NULL, ncol(right_mean_row)), name = "right_mean_row_inp")
+  left_squareDeviation_inp <- tf$placeholder(tf$float64, shape = shape(NULL, ncol(left_squareDeviation)), name = "left_squareDeviation_inp")
+  right_squareDeviation_inp <- tf$placeholder(tf$float64, shape = shape(NULL, ncol(right_squareDeviation)), name = "right_squareDeviation_inp")
+  
+  log_loss <- NNG_obj(prior_P, mu0, kappa0, alpha0, beta0, changePointTable, combNumber, Ti, left_seq_n_, 
+                 left_mean_row_inp, right_mean_row_inp, left_squareDeviation_inp, right_squareDeviation_inp, tf)
+  
+  optimizer = tf$train$AdamOptimizer(learning_rate=learning_rate)
+  train = optimizer$minimize(log_loss)
+  
+  
+  # Start the graph and inference
+  session_conf <- tf$ConfigProto(intra_op_parallelism_threads = threads,
+                                 inter_op_parallelism_threads = threads)
+  sess <- tf$Session(config = session_conf)
+  init <- tf$global_variables_initializer()
+  sess$run(init)
+  
+  fd_full <- dict(left_mean_row_inp = left_mean_row, 
+                  right_mean_row_inp = right_mean_row, 
+                  left_squareDeviation_inp = left_squareDeviation, 
+                  right_squareDeviation_inp = right_squareDeviation)
+  ll <- ll_old <- sess$run(log_loss, feed_dict = fd_full)
+  
+  ll_diff <- c()
+  for(i in seq_len(max_iter)) {
+    op <- sess$run(train, feed_dict = fd_full)
+
+    ll <- sess$run(log_loss, feed_dict = fd_full)
     
-    parameter_hat = list(P_hat = P_hat, sigma_hat = sigma_hat, nu_hat = nu_hat, tau_hat = tau_hat)
-    log_likelihood = matrix(data=rep(0, N*(combNumber+1)), nrow=N, ncol=(combNumber+1))
-    for(i in 1:N) {
-      for(j in 0:combNumber) {
-        log_likelihood[i,j+1] = NN_logL_ij(P_hat, sigma_hat, nu_hat, tau_hat, i, j,
-                                           changePointTable, combNumber, Ti, left_seq_index_table, 
-                                           left_mean_row, right_mean_row, left_square_rowsum)
-      }
+    if(length(ll_diff) == 20) {
+      ll_diff <- ll_diff[-1]
     }
-    likelihood = exp(log_likelihood)
-    prob = likelihood/rowSums(likelihood)
-  }
-  else {
-    fit = optimx(par=c(0.01, 0.01, 0.01, 0.01, 0.01), method='L-BFGS-B',
-                  lower=c(1e-9,-100,1e-9,1e-9,1e-9), 
-                  upper=c(0.999999999,100,100,100,100), 
-                  fn=NNG.obj, changePointTable=changePointTable, combNumber=combNumber, 
-                  N=N, Ti=Ti, left_seq_index_table=left_seq_index_table, 
-                  left_mean_row=left_mean_row, right_mean_row=right_mean_row, 
-                  left_squareDeviation=left_squareDeviation, right_squareDeviation=right_squareDeviation)
-    
-    print(paste("Convergence:", fit$convcode))
-    P_hat = fit$p1; mu0_hat = fit$p2; kappa0_hat = fit$p3; alpha0_hat = fit$p4; beta0_hat = fit$p5;
-    
-    parameter_hat = list(P_hat = P_hat, mu0_hat = mu0_hat, kappa0_hat = kappa0_hat, alpha0_hat = alpha0_hat, beta0_hat = beta0_hat)
-    log_likelihood = matrix(data=rep(0, N*(combNumber+1)), nrow=N, ncol=(combNumber+1))
-    for(i in 1:N) {
-      for(j in 0:combNumber) {
-        log_likelihood[i,j+1] = NNG_logL_ij(P_hat, mu0_hat, kappa0_hat, alpha0_hat, beta0_hat, i, j,
-                                            changePointTable, combNumber, Ti, left_seq_index_table, 
-                                            left_mean_row, right_mean_row, 
-                                            left_squareDeviation, right_squareDeviation)
-      }
+    ll_diff <- c(ll_diff, (ll_old - ll))
+    if(verbose & (i-1) %% 20 == 0) {
+      message(paste(i, ll))
+      message(paste("Max delta ll:", max(ll_diff)))
     }
-    likelihood = exp(log_likelihood)
-    prob = likelihood/rowSums(likelihood)
+    if(max(ll_diff) < rel_tol) {
+      message(paste(i, ll))
+      message(paste("Max delta ll:", max(ll_diff)))
+      break
+    }
+    ll_old <- ll
   }
+  
+  variable_list <- list(prior_P0, mu0, kappa0, alpha0, beta0)
+  variable_names <- c("P", "mu0", "kappa0", "alpha0", "beta0")
+  mle_params <- sess$run(variable_list, feed_dict = fd_full)
+  names(mle_params) <- variable_names
+  
+  print("Converge params:")
+  print(mle_params)
+  
+  log_likelihood_ <- NNG_logL_cp(prior_P, mu0, kappa0, alpha0, beta0, changePointTable, combNumber, Ti, left_seq_n_,
+                                 left_mean_row_inp, right_mean_row_inp, left_squareDeviation_inp, right_squareDeviation_inp, tf)
+  log_likelihood <- sess$run(log_likelihood_, feed_dict = fd_full)
+  sess$close()
+  
+  likelihood = exp(log_likelihood)
+  prob = likelihood/rowSums(likelihood)
+  
   # Get which genes have change points
-  pi_0 = prob[,1];
+  pi_0 = prob[,ncol(prob)];
   pi_0_order = sort(pi_0);
   pi_0_k=0;
   for(i in 1:N) {
@@ -227,8 +204,8 @@ EBtimecourse = function(exp.dat=NA, timepoint=NA, replicate=NA, model="NN", FDR=
   cp.index = which(pi_0 <= pi_0_k);
   
   # Get change points positions
-  pi_star = apply(prob[,2:ncol(prob)], 1, max);
-  pi_star_j = apply(prob[,2:ncol(prob)], 1, which.max);
+  pi_star = apply(prob[,1:(ncol(prob)-1)], 1, max);
+  pi_star_j = apply(prob[,1:(ncol(prob)-1)], 1, which.max);
   pi_star_1 = 1-pi_star
   pi_star_1_order = sort(pi_star_1);
   pi_star_1_k=0;
@@ -239,6 +216,6 @@ EBtimecourse = function(exp.dat=NA, timepoint=NA, replicate=NA, model="NN", FDR=
   pi_star_estimated = which(pi_star_1 <= pi_star_1_k);
   cp.position = data.frame(SeqID=pi_star_estimated, changePointTable[pi_star_j[pi_star_estimated],], stringsAsFactors=F)
   
-  result = list(cp.index = cp.index, cp.position = cp.position, estimated_parameter = parameter_hat)
+  result = list(cp.index = cp.index, cp.position = cp.position, mle_parameter = mle_params, ll=likelihood)
   return(result)
 }
