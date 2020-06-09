@@ -3,7 +3,7 @@ library(foreach)
 
 ### auxiliary functions for normal normal gamm model
 NNG_logL_cp <- function(prior_P, mu0, kappa0, alpha0, beta0, changePointTable, combNumber, Ti, left_seq_n, 
-                        left_mean_row, right_mean_row, left_squareDeviation, right_squareDeviation, tf) {
+                         left_mean_row, right_mean_row, left_squareDeviation, right_squareDeviation, tf) {
   n1 = left_seq_n
   n2 = tf$constant(Ti, dtype=tf$float64) - left_seq_n
   
@@ -28,7 +28,7 @@ NNG_logL_cp <- function(prior_P, mu0, kappa0, alpha0, beta0, changePointTable, c
 NNG_obj <- function(prior_P, mu0, kappa0, alpha0, beta0, changePointTable, combNumber, Ti, left_seq_n, 
                     left_mean_row, right_mean_row, left_squareDeviation, right_squareDeviation, tf) {
   loss_cp <- NNG_logL_cp(prior_P, mu0, kappa0, alpha0, beta0, changePointTable, combNumber, Ti, 
-                         left_seq_n, left_mean_row, right_mean_row, left_squareDeviation, right_squareDeviation, tf)
+                             left_seq_n, left_mean_row, right_mean_row, left_squareDeviation, right_squareDeviation, tf)
   loss <- tf$reduce_logsumexp(loss_cp, 1L)
   loss <- - tf$reduce_sum(loss)
   return(loss);
@@ -40,11 +40,11 @@ my_sumsquare <- function(x) apply(x, 1, function(x) sum(x^2))
 my_squareDeviation <- function(x) apply(x, 1, function(x) sum((x-mean(x))^2))
 
 
-EBtimecourse = function(exp.dat=NA, timepoints=NA, FDR=0.1, 
+EBtimecourse = function(exp.dat=NA, timepoint=NA, replicate=NA, FDR=0.1, 
                         learning_rate=0.001, max_iter=1e5, rel_tol=1e-10, threads=0L, verbose=F) {
   stopifnot(class(exp.dat) == "matrix")
-  stopifnot(class(FDR) == "numeric")
-  stopifnot(ncol(exp.dat) == length(timepoints))
+  stopifnot(class(timepoint) == "numeric" & class(replicate) == "numeric" & class(FDR) == "numeric")
+  stopifnot(ncol(exp.dat) == timepoint*replicate)
   
   tf <- tf$compat$v1
   tf$disable_v2_behavior()
@@ -52,7 +52,6 @@ EBtimecourse = function(exp.dat=NA, timepoints=NA, FDR=0.1,
   
   tf$reset_default_graph()
   
-  timepoint <- length(unique(timepoints))
   # calculate global values
   N <- nrow(exp.dat)
   changePointTable <- data.frame(matrix(NA, nrow=(timepoint-1)+(timepoint-1)*(timepoint-2)/2, ncol=3), stringsAsFactors=F)
@@ -65,13 +64,13 @@ EBtimecourse = function(exp.dat=NA, timepoints=NA, FDR=0.1,
   changePointTable[timepoint:nrow(changePointTable),c("n1","n2")] <- combT
   changePointTable[timepoint:nrow(changePointTable),"n3"] <- timepoint-rowSums(changePointTable[timepoint:nrow(changePointTable),c("n1", "n2")])
   combNumber <- nrow(changePointTable)
-  Ti <- length(timepoints)
+  Ti <- timepoint*replicate
   left_seq_index_table = foreach(cp = 1:(combNumber+1)) %do% {
     if(cp==combNumber+1) 
       return(1:Ti)
     else {
-      rho1 <- sum(table(timepoints)[1:changePointTable[cp,"n1"]])
-      rho2 <- sum(table(timepoints)[1:(changePointTable[cp,"n1"]+changePointTable[cp,"n2"])])
+      rho1 <- changePointTable[cp,"n1"]*replicate
+      rho2 <- (changePointTable[cp,"n1"]+changePointTable[cp,"n2"])*replicate
       
       if(rho2<Ti)
         return(c(1:rho1, (rho2+1):Ti))
@@ -89,7 +88,7 @@ EBtimecourse = function(exp.dat=NA, timepoints=NA, FDR=0.1,
   left_mean_row <- sapply(left_submatrix, my_mean)
   right_mean_row <- sapply(right_submatrix, my_mean)
   right_mean_row[is.nan(right_mean_row)] <- 0
-  
+    
   left_squareDeviation <- sapply(left_submatrix, my_squareDeviation)
   right_squareDeviation <- sapply(right_submatrix, my_squareDeviation)
   
@@ -102,34 +101,41 @@ EBtimecourse = function(exp.dat=NA, timepoints=NA, FDR=0.1,
                             tf$clip_by_value(x, tf$constant(1e-9, dtype = tf$float64), 
                                              tf$constant(1-1e-9, dtype = tf$float64))
                           })
+  W <- tf$Variable(tf$random_uniform(shape = shape(1), minval=1, maxval=100, dtype = tf$float64), 
+                   dtype = tf$float64, name = "W", 
+                   constraint = function(x) {
+                     tf$clip_by_value(x, tf$constant(1, dtype = tf$float64), 
+                                      tf$constant(1e5, dtype = tf$float64))
+                   })
   mu0 <- tf$Variable(tf$random_normal(shape = shape(1), dtype = tf$float64), 
                      dtype = tf$float64, name = "mu0",
                      constraint = function(x) {
-                       tf$clip_by_value(x, tf$constant(-1e5, dtype = tf$float64), 
-                                        tf$constant(1e5, dtype = tf$float64))
+                       tf$clip_by_value(x, tf$constant(-100, dtype = tf$float64), 
+                                        tf$constant(100, dtype = tf$float64))
                      })
   kappa0 <- tf$Variable(tf$random_uniform(shape = shape(1), minval=0.1, maxval=10, dtype = tf$float64), 
                         dtype = tf$float64, name = "kappa0",
                         constraint = function(x) {
                           tf$clip_by_value(x, tf$constant(1e-9, dtype = tf$float64), 
-                                           tf$constant(1e5, dtype = tf$float64))
+                                           tf$constant(100, dtype = tf$float64))
                         })
   alpha0 <- tf$Variable(tf$random_uniform(shape = shape(1), minval=0.1, maxval=10, dtype = tf$float64),
                         dtype = tf$float64, name = "alpha0",
                         constraint = function(x) {
                           tf$clip_by_value(x, tf$constant(1e-9, dtype = tf$float64), 
-                                           tf$constant(1e5, dtype = tf$float64))
+                                           tf$constant(100, dtype = tf$float64))
                         })
   beta0 <- tf$Variable(tf$random_uniform(shape = shape(1), minval=0.1, maxval=10, dtype = tf$float64),
                        dtype = tf$float64, name = "beta0",
                        constraint = function(x) {
                          tf$clip_by_value(x, tf$constant(1e-9, dtype = tf$float64), 
-                                          tf$constant(1e5, dtype = tf$float64))
+                                          tf$constant(100, dtype = tf$float64))
                        })
-  t1 <- tf$constant(c(rep(1, combNumber), 0), dtype = tf$float64)
-  t2 <- tf$constant(c(rep(1, combNumber), -combNumber), dtype = tf$float64)
-  prior_P <- (t1 - prior_P0)/tf$constant(combNumber, dtype = tf$float64)
-  prior_P <- prior_P * t2 
+  p0 <- tf$constant(c(rep(1, combNumber), 0), dtype=tf$float64) + 
+    tf$constant(c(as.integer(changePointTable$n1 != 1 & changePointTable$n3 != 1), 0), dtype=tf$float64) * (W-tf$constant(1, dtype=tf$float64))
+  p0 <- p0 / tf$reduce_sum(p0) * (tf$constant(1, dtype=tf$float64) - prior_P0)
+  t1 <- tf$constant(c(rep(0, combNumber), 1), dtype = tf$float64)
+  prior_P <- p0 + t1 * prior_P0
   
   left_mean_row_inp <- tf$placeholder(tf$float64, shape = shape(NULL, ncol(left_mean_row)), name = "left_mean_row_inp")
   right_mean_row_inp <- tf$placeholder(tf$float64, shape = shape(NULL, ncol(right_mean_row)), name = "right_mean_row_inp")
@@ -137,7 +143,7 @@ EBtimecourse = function(exp.dat=NA, timepoints=NA, FDR=0.1,
   right_squareDeviation_inp <- tf$placeholder(tf$float64, shape = shape(NULL, ncol(right_squareDeviation)), name = "right_squareDeviation_inp")
   
   log_loss <- NNG_obj(prior_P, mu0, kappa0, alpha0, beta0, changePointTable, combNumber, Ti, left_seq_n_, 
-                      left_mean_row_inp, right_mean_row_inp, left_squareDeviation_inp, right_squareDeviation_inp, tf)
+                 left_mean_row_inp, right_mean_row_inp, left_squareDeviation_inp, right_squareDeviation_inp, tf)
   
   optimizer = tf$train$AdamOptimizer(learning_rate=learning_rate)
   train = optimizer$minimize(log_loss)
@@ -159,7 +165,7 @@ EBtimecourse = function(exp.dat=NA, timepoints=NA, FDR=0.1,
   ll_diff <- c()
   for(i in seq_len(max_iter)) {
     op <- sess$run(train, feed_dict = fd_full)
-    
+
     ll <- sess$run(log_loss, feed_dict = fd_full)
     
     if(length(ll_diff) == 20) {
@@ -178,8 +184,8 @@ EBtimecourse = function(exp.dat=NA, timepoints=NA, FDR=0.1,
     ll_old <- ll
   }
   
-  variable_list <- list(prior_P0, mu0, kappa0, alpha0, beta0)
-  variable_names <- c("P", "mu0", "kappa0", "alpha0", "beta0")
+  variable_list <- list(prior_P0, W, mu0, kappa0, alpha0, beta0)
+  variable_names <- c("P", "W", "mu0", "kappa0", "alpha0", "beta0")
   mle_params <- sess$run(variable_list, feed_dict = fd_full)
   names(mle_params) <- variable_names
   
