@@ -3,7 +3,7 @@ library(foreach)
 
 ### auxiliary functions for normal normal gamm model
 NNG_logL_cp <- function(prior_P, mu0, kappa0, alpha0, beta0, changePointTable, combNumber, Ti, left_seq_n, 
-                        left_mean_row, right_mean_row, left_squareDeviation, right_squareDeviation, tf) {
+                         left_mean_row, right_mean_row, left_squareDeviation, right_squareDeviation, tf) {
   n1 = left_seq_n
   n2 = tf$constant(Ti, dtype=tf$float64) - left_seq_n
   
@@ -28,7 +28,7 @@ NNG_logL_cp <- function(prior_P, mu0, kappa0, alpha0, beta0, changePointTable, c
 NNG_obj <- function(prior_P, mu0, kappa0, alpha0, beta0, changePointTable, combNumber, Ti, left_seq_n, 
                     left_mean_row, right_mean_row, left_squareDeviation, right_squareDeviation, tf) {
   loss_cp <- NNG_logL_cp(prior_P, mu0, kappa0, alpha0, beta0, changePointTable, combNumber, Ti, 
-                         left_seq_n, left_mean_row, right_mean_row, left_squareDeviation, right_squareDeviation, tf)
+                             left_seq_n, left_mean_row, right_mean_row, left_squareDeviation, right_squareDeviation, tf)
   loss <- tf$reduce_logsumexp(loss_cp, 1L)
   loss <- - tf$reduce_sum(loss)
   return(loss);
@@ -40,11 +40,12 @@ my_sumsquare <- function(x) apply(x, 1, function(x) sum(x^2))
 my_squareDeviation <- function(x) apply(x, 1, function(x) sum((x-mean(x))^2))
 
 
-EBtimecourse = function(exp.dat=NA, timepoints=NA, FDR=0.1, 
+EBtimecourse = function(exp.dat=NA, timepoint=NA, replicate=NA, FDR=0.1, 
                         learning_rate=0.001, max_iter=1e5, rel_tol=1e-10, threads=0L, verbose=F) {
   stopifnot(class(exp.dat) == "matrix")
-  stopifnot(class(FDR) == "numeric")
-  stopifnot(ncol(exp.dat) == length(timepoints))
+  stopifnot(class(timepoint) == "numeric" & class(replicate) == "numeric" & class(FDR) == "numeric")
+  stopifnot(timepoint == length(replicate))
+  stopifnot(ncol(exp.dat) == sum(replicate))
   
   tf <- tf$compat$v1
   tf$disable_v2_behavior()
@@ -52,7 +53,6 @@ EBtimecourse = function(exp.dat=NA, timepoints=NA, FDR=0.1,
   
   tf$reset_default_graph()
   
-  timepoint <- length(unique(timepoints))
   # calculate global values
   N <- nrow(exp.dat)
   changePointTable <- data.frame(matrix(NA, nrow=(timepoint-1)+(timepoint-1)*(timepoint-2)/2, ncol=3), stringsAsFactors=F)
@@ -65,13 +65,13 @@ EBtimecourse = function(exp.dat=NA, timepoints=NA, FDR=0.1,
   changePointTable[timepoint:nrow(changePointTable),c("n1","n2")] <- combT
   changePointTable[timepoint:nrow(changePointTable),"n3"] <- timepoint-rowSums(changePointTable[timepoint:nrow(changePointTable),c("n1", "n2")])
   combNumber <- nrow(changePointTable)
-  Ti <- length(timepoints)
+  Ti <- sum(replicate)
   left_seq_index_table = foreach(cp = 1:(combNumber+1)) %do% {
     if(cp==combNumber+1) 
       return(1:Ti)
     else {
-      rho1 <- sum(table(timepoints)[1:changePointTable[cp,"n1"]])
-      rho2 <- sum(table(timepoints)[1:(changePointTable[cp,"n1"]+changePointTable[cp,"n2"])])
+      rho1 <- sum(replicate[1:changePointTable[cp,"n1"]])
+      rho2 <- sum(replicate[1:(changePointTable[cp,"n1"]+changePointTable[cp,"n2"])])
       
       if(rho2<Ti)
         return(c(1:rho1, (rho2+1):Ti))
@@ -89,7 +89,7 @@ EBtimecourse = function(exp.dat=NA, timepoints=NA, FDR=0.1,
   left_mean_row <- sapply(left_submatrix, my_mean)
   right_mean_row <- sapply(right_submatrix, my_mean)
   right_mean_row[is.nan(right_mean_row)] <- 0
-  
+    
   left_squareDeviation <- sapply(left_submatrix, my_squareDeviation)
   right_squareDeviation <- sapply(right_submatrix, my_squareDeviation)
   
@@ -137,7 +137,7 @@ EBtimecourse = function(exp.dat=NA, timepoints=NA, FDR=0.1,
   right_squareDeviation_inp <- tf$placeholder(tf$float64, shape = shape(NULL, ncol(right_squareDeviation)), name = "right_squareDeviation_inp")
   
   log_loss <- NNG_obj(prior_P, mu0, kappa0, alpha0, beta0, changePointTable, combNumber, Ti, left_seq_n_, 
-                      left_mean_row_inp, right_mean_row_inp, left_squareDeviation_inp, right_squareDeviation_inp, tf)
+                 left_mean_row_inp, right_mean_row_inp, left_squareDeviation_inp, right_squareDeviation_inp, tf)
   
   optimizer = tf$train$AdamOptimizer(learning_rate=learning_rate)
   train = optimizer$minimize(log_loss)
@@ -159,7 +159,7 @@ EBtimecourse = function(exp.dat=NA, timepoints=NA, FDR=0.1,
   ll_diff <- c()
   for(i in seq_len(max_iter)) {
     op <- sess$run(train, feed_dict = fd_full)
-    
+
     ll <- sess$run(log_loss, feed_dict = fd_full)
     
     if(length(ll_diff) == 20) {
