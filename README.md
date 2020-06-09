@@ -4,6 +4,8 @@ An empirical Bayes change point model for gene expression timecourse data.
 
 Required R packages: tensorflow, foreach
 
+Use soure("EBtimecourse.R") to load the function in the R enviroment.
+
 The function only accepts one conditional timecourse data. If you have two conditional data, say cases and controls, you can transform it to one conditional data: case - control for paired data, averaged cases - averaged controls for unpaired data.
 
 Parameters for EBtimecourse function:
