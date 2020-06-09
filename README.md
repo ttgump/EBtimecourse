@@ -27,6 +27,6 @@ Parameters for EBtimecourse function:
    threads - number of threads.
 ```
 
-If we have a data of 8 time points, and each time point has 3 replicates, then timepoint=8 and replicate=c(3,3,3,3,3,3,3,3).
+If you have a data of 8 time points, and each time point has 3 replicates, then timepoint=8 and replicate=c(3,3,3,3,3,3,3,3).
 
 The folder "Simulate_sample" stores code for simulation experiments. The folder "data" stores the real data we used in the paper.
