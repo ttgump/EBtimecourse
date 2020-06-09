@@ -6,7 +6,9 @@ Parameters for EBtimecourse function:
 
 exp.dat - matrix of data, rows stand for genes and columns stand for time points.
 
-timepoints -  vector of time points. For example, if we have 5 time points and each time point has 2 replicates, then timepoints should be c(1, 1, 2, 2, 3, 3, 4, 4, 5, 5)
+timepoint -  number of time points
+
+replicate - number of replicates for each time point.
 
 FDR - expected false discovery rate (default 0.1).
 
@@ -18,3 +20,5 @@ rel_tol - relative tolerance threshold for optimizing termination (defualt 1e-10
 
 threads - number of threads.
 
+
+The folder "Simulate_sample" stores code for simulation experiments. The folder "data" stores the real data we used in the paper.
