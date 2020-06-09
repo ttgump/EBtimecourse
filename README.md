@@ -2,6 +2,8 @@
 
 An empirical Bayes change point model for gene expression timecourse data.
 
+Required R packages: tensorflow, foreach
+
 Parameters for EBtimecourse function:
 
    exp.dat - matrix of data, rows stand for genes and columns stand for time points.
