@@ -1,6 +1,6 @@
 # EBtimecourse
 
-An empirical Bayes change point model for gene expression timecourse data.
+An empirical Bayes change point model for gene expression timecourse data. The detail is described in our paper "An Empirical Bayes Change Point Model for Transcriptome Time Course Data" published in *Annals of Applied Statistics*.
 
 Required R packages: tensorflow, foreach
 
