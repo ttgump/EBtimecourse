@@ -6,7 +6,7 @@ Required R packages: tensorflow, foreach
 
 Use soure("EBtimecourse.R") to load the function in the R enviroment.
 
-The function only accepts one conditional timecourse data. If you have two conditional data, say cases and controls, you can transform it to one conditional data: case - control for paired data, averaged cases - averaged controls for unpaired data.
+The function only accepts one conditional timecourse data. The input data should be log scaled microarray data or normalized and log scaled RNA-seq data. If you have two conditional data, say cases and controls, you can transform it to one conditional data: case - control for paired data, averaged cases - averaged controls for unpaired data.
 
 Parameters for EBtimecourse function:
 ```
