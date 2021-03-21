@@ -14,7 +14,7 @@ Parameters for EBtimecourse function:
 
    timepoint -  number of time points
 
-   replicate - number of replicates for each time point.
+   replicate - a vector of number of replicates for each time point.
 
    FDR - expected false discovery rate (default 0.1).
 
