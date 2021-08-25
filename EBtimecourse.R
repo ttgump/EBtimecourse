@@ -40,6 +40,16 @@ my_sumsquare <- function(x) apply(x, 1, function(x) sum(x^2))
 my_squareDeviation <- function(x) apply(x, 1, function(x) sum((x-mean(x))^2))
 
 
+# Main function
+# Arguments:  exp.dat - a gene by time points matrix (one time point allows replicates)
+#             timepoint - the number of time points
+#             replicate - a vector of number of replicates for each time point
+#             FDR - expected false discovery rate
+#             learning_rate - learning rate for the Adam optimizer
+#             max_iter - max iterations
+#             rel_tol - relative tolerance threshold for optimizing termination
+#             threads - number of threads
+#             verbose - set to display value of loss function in each iteration
 EBtimecourse = function(exp.dat=NA, timepoint=NA, replicate=NA, FDR=0.1, 
                         learning_rate=0.001, max_iter=1e5, rel_tol=1e-10, threads=0L, verbose=F) {
   stopifnot(class(exp.dat) == "matrix")
@@ -55,6 +65,7 @@ EBtimecourse = function(exp.dat=NA, timepoint=NA, replicate=NA, FDR=0.1,
   
   # calculate global values
   N <- nrow(exp.dat)
+  # changePointTable stores all possible change point positions
   changePointTable <- data.frame(matrix(NA, nrow=(timepoint-1)+(timepoint-1)*(timepoint-2)/2, ncol=3), stringsAsFactors=F)
   colnames(changePointTable) <- c("n1", "n2", "n3")
   changePointTable[1:(timepoint-1),"n1"] <- 1:(timepoint-1)
@@ -64,8 +75,12 @@ EBtimecourse = function(exp.dat=NA, timepoint=NA, replicate=NA, FDR=0.1,
   combT$V2 <- combT$V2 - combT$V1
   changePointTable[timepoint:nrow(changePointTable),c("n1","n2")] <- combT
   changePointTable[timepoint:nrow(changePointTable),"n3"] <- timepoint-rowSums(changePointTable[timepoint:nrow(changePointTable),c("n1", "n2")])
+  # combNumber is the number of change point patterns. For T time points, this number is C(T, 2)
   combNumber <- nrow(changePointTable)
   Ti <- sum(replicate)
+  # left_seq_index_table stores index of the first and third homogeneous sequences (sequences before the first change point and after the second change point)
+  # We call the sequences as left_seq for short
+  # right_seq is the second homogeneous sequence (sequence after the first change point and before second change point)
   left_seq_index_table = foreach(cp = 1:(combNumber+1)) %do% {
     if(cp==combNumber+1) 
       return(1:Ti)
@@ -83,13 +98,16 @@ EBtimecourse = function(exp.dat=NA, timepoint=NA, replicate=NA, FDR=0.1,
   left_seq_n_ <- tf$constant(left_seq_n, dtype=tf$float64)
   left_seq_n_ <- tf$expand_dims(left_seq_n_, 0L)
   
+  # matrices of left_seq and right_seq
   left_submatrix <- lapply(left_seq_index_table, function(i) exp.dat[, i, drop=F])
   right_submatrix <- lapply(left_seq_index_table, function(i) exp.dat[, -i, drop=F])
   
+  # means of left_seq and right_seq
   left_mean_row <- sapply(left_submatrix, my_mean)
   right_mean_row <- sapply(right_submatrix, my_mean)
   right_mean_row[is.nan(right_mean_row)] <- 0
-    
+  
+  # deviation of left_seq and right_seq  
   left_squareDeviation <- sapply(left_submatrix, my_squareDeviation)
   right_squareDeviation <- sapply(right_submatrix, my_squareDeviation)
   
