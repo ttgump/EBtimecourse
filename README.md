@@ -2,10 +2,19 @@
 
 An empirical Bayes change point model for gene expression timecourse data. Time-course experiments are commonly conducted to capture temporal changes. It is generally of interest to detect if any changes happen over time, which we deﬁne as a detection problem. If there is a change, it is informative to know when the change is, which we deﬁne as an identiﬁcation problem. It is often desired to control Type I error rate at a nominal level while applying a testing procedure to detect or identify these changes. The EBtimecourse model provides an unified multiple-testing framework built upon an empirical Bayes change-point model to solve these two problems. The detail is described in our paper "An Empirical Bayes Change Point Model for Transcriptome Time Course Data" published in *Annals of Applied Statistics*. https://doi.org/10.1214/20-AOAS1403
 
+## Table of contents
+- [Diagram](#diagram)
+- [Usage](#usage)
+- [Folders](#folders)
+- [R enviroment](#enviroment)
+- [Contact](#contact)
+
+## <a name="diagram"></a>Diagram
 ![alt text](https://github.com/ttgump/EBtimecourse/blob/master/Diagram.png?raw=True)<br/>
 In the figure, Xij means the expression level of gene i at time point j.
 
-Required R packages: tensorflow, foreach
+## <a name="usage"></a>Usage
+Required R packages: tensorflow, foreach.
 
 Use ```soure("EBtimecourse.R")``` to load the function in the R enviroment.
 
@@ -32,8 +41,12 @@ Parameters for EBtimecourse function:
 
 If you have a data of 8 time points, and each time point has 3 replicates, then timepoint=8 and replicate=c(3,3,3,3,3,3,3,3).
 
-The folder "Simulate_sample" stores code for simulation experiments. The folder "data" stores the real data we used in the paper.
+## <a name="folders"></a>Folders
 
+**[Simulate_sample](https://github.com/ttgump/EBtimecourse/tree/master/Simulation_samples)** stores code for simulation experiments.<br/>
+**[data](https://github.com/ttgump/EBtimecourse/tree/master/data)** stores the real data we used in the paper.
+
+## <a name="enviroment"></a>R enviroment
 Here is version information of my R enviroment:
 
 ```
@@ -58,3 +71,6 @@ loaded via a namespace (and not attached):
  [1] compiler_3.6.0   magrittr_1.5     Matrix_1.2-17    tools_3.6.0      whisker_0.4      base64enc_0.1-3  Rcpp_1.0.3      
  [8] reticulate_1.13  codetools_0.2-16 grid_3.6.0       iterators_1.0.12 jsonlite_1.6     tfruns_1.4       lattice_0.20-38 
 ```
+
+## <a name="contact"></a>Contact
+Tian Tian tt72@njit.edu
