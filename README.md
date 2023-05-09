@@ -2,6 +2,8 @@
 
 An empirical Bayes change point model for gene expression timecourse data. Time-course experiments are commonly conducted to capture temporal changes. It is generally of interest to detect if any changes happen over time, which we deﬁne as a detection problem (Q1). If there is a change, it is informative to know when the change is, which we deﬁne as an identiﬁcation problem (Q2). It is often desired to control Type I error rate at a nominal level while applying a testing procedure to detect or identify these changes. The EBtimecourse model provides an unified multiple-testing framework built upon an empirical Bayes change-point model to solve these two problems. The detail is described in our paper "An Empirical Bayes Change Point Model for Transcriptome Time Course Data" published in *Annals of Applied Statistics*. https://doi.org/10.1214/20-AOAS1403
 
+[Full manuscript link](https://www.researchgate.net/publication/350339434_An_empirical_Bayes_change-point_model_for_transcriptome_time-course_data)
+
 ## Table of contents
 - [Diagram](#diagram)
 - [Usage](#usage)
